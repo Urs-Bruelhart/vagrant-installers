@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+export SLACK_USERNAME="${SLACK_USERNAME:-Vagrant}"
+export SLACK_ICON="${SLACK_ICON:-https://avatars.slack-edge.com/2017-10-17/257000837696_070f98107cdacc0486f6_36.png}"
+export SLACK_TITLE="${SLACK_TITLE:-Vagrant Packaging}"
+export PACKET_EXEC_DEVICE_NAME="${PACKET_EXEC_DEVICE_NAME:-ci-installers}"
+export PAKCET_EXEC_DEVICE_NAME="${PACKET_EXEC_DEVICE_SIZE:-baremetal_1}"
+export PAKCET_EXEC_PREFER_FACILITIES="${PACKET_EXEC_PREFER_FACILITIES:-iad1,iad2,ewr1,dfw2,sea1,sjc1,lax1}"
+export PACKET_EXEC_OPERATING_SYSTEM="${PACKET_EXEC_OPERATING_SYSTEM:-ubuntu_18_04}"
+export PACKET_EXEC_PRE_BUILTINS="${PACKET_EXEC_PRE_BUILTINS:-InstallVmware,InstallVagrant,InstallVagrantVmware}"
+
+export
+
 if [ "${DEBUG}" = "1" ]; then
     set -x
     output="/dev/stdout"
@@ -93,6 +104,7 @@ fi
 job_id=$(uuidgen)
 export PACKET_EXEC_REMOTE_DIRECTORY="${job_id}"
 export PACKET_EXEC_PERSIST="1"
+export PKT_VAGRANT_INSTALLERS_VAGRANT_PACKAGE_SIGNING_REQUIRED=1
 
 # Grab the vagrant gem the installer is building around
 
@@ -116,6 +128,20 @@ rm .output
 
 vagrant_version="$(gem specification vagrant-*.gem version)"
 vagrant_version="${vagrant_version##*version: }"
+
+# Ensure we have a packet device to connect
+echo "Creating packet device if needed..."
+packet-exec create > .output 2>&1 &
+pid=$!
+until [ -f .output ]; do
+    sleep 0.1
+done
+tail -f --quiet --pid "${pid}" .output
+wait "${pid}"
+if [ $? -ne 0 ]; then
+    fail "Failed to create packet device"
+fi
+rm .output
 
 # Build our substrates
 mkdir -p substrate-assets pkg
@@ -162,8 +188,7 @@ else
     done
     tail -f --quiet --pid "${pid}" .output
     wait "${pid}"
-    result=$?
-    if [ $result -ne 0 ]; then
+    if [ $? -ne 0 ]; then
         fail "Failed to start builder guests on packet device for substrates"
     fi
     rm .output
